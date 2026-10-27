@@ -1,0 +1,4 @@
+{
+  "pages": ["pages/index/index", "pages/detail/index"],
+  "window": { "defaultTitle": "Automator Demo", "backgroundColor": "#f5f7fb" }
+}

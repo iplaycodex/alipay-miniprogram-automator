@@ -1,0 +1,19 @@
+{
+  "name": "alipay-miniprogram-automator",
+  "version": "0.1.0-alpha.0",
+  "description": "Unofficial automation SDK for the simulator in Alipay Mini Program Studio",
+  "main": "index.js",
+  "exports": { ".": "./index.js" },
+  "files": ["index.js", "src/", "README.md", "docs/VALIDATION.md", "LICENSE"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node --test --test-concurrency=1 test/ide.e2e.js",
+    "check:package": "npm pack --dry-run --json"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/iplaycodex/alipay-miniprogram-automator.git" },
+  "bugs": { "url": "https://github.com/iplaycodex/alipay-miniprogram-automator/issues" },
+  "license": "MIT",
+  "keywords": ["alipay", "miniprogram", "automator", "e2e", "testing"],
+  "dependencies": { "ws": "^8.22.0" }
+}

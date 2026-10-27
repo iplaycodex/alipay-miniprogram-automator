@@ -1,0 +1,12 @@
+<view class="page">
+  <view class="card">
+    <view class="title">支付宝 IDE 自动化示例</view>
+    <view class="counter" id="counter">计数：{{count}}</view>
+    <button class="increment" id="increment" onTap="increment">加一</button>
+  </view>
+  <view class="card">
+    <input class="message" id="message" value="{{message}}" placeholder="输入文本" onInput="onMessage" />
+    <view class="message-value" id="message-value">输入：{{message}}</view>
+  </view>
+  <button class="open-detail" id="open-detail" onTap="openDetail">打开详情</button>
+</view>

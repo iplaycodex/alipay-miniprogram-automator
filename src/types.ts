@@ -80,3 +80,10 @@ export interface OwnedIDE {
 
 export type RendererResponse<T> =
   { ok: true; value: T } | { ok: false; message?: string; code?: string }
+
+/** Identity of one worker page and its current renderer document. */
+export interface PageIdentity {
+  id: string
+  viewId: string
+  documentId: string
+}

@@ -1,1 +1,1 @@
-<view class="page"><view class="card"><view class="title">详情页</view><view class="detail-count" id="detail-count">传入计数：{{count}}</view><button class="go-back" id="go-back" onTap="goBack">返回</button></view></view>
+<view class="page"><view class="card"><view class="title">详情页</view><view class="detail-count" id="detail-count">传入计数：{{count}}</view><button class="open-next" onTap="openNext">再开一页</button><button class="go-back" id="go-back" onTap="goBack">返回</button></view></view>

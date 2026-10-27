@@ -145,16 +145,7 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
     miniProgram.info.projectPath = projectPath
     miniProgram.info.logPath = logPath
     try {
-      await miniProgram.waitFor(
-        async () => {
-          try {
-            return await miniProgram.currentPage()
-          } catch (_) {
-            return null
-          }
-        },
-        { timeout, message: `Mini-program did not load; see ${logPath}` },
-      )
+      await miniProgram._waitForReady(timeout)
     } catch (cause) {
       await miniProgram.close()
       throw cause

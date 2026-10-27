@@ -3,9 +3,15 @@
 declare function getCurrentPages(): Array<{
   route?: string
   __route__?: string
-  options?: Record<string, unknown>
+  $id: string | number
+  $viewId: string | number
+  getLoadOptions(): Record<string, unknown>
 }>
 
 declare const my: {
-  [method: string]: (options?: { url: string }) => void
+  [method: string]: (options: {
+    url?: string
+    success: () => void
+    fail: (cause: { error?: string | number; errorMessage?: string; errMsg?: string }) => void
+  }) => void
 }

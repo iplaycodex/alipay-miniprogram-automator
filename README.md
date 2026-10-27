@@ -134,6 +134,10 @@ const result = await miniProgram.evaluate(
 )
 ```
 
+`Page` 绑定具体页面实例；同一路径打开多次也会分别识别。`page.$/$$/waitFor` 只查询该实例的渲染文档，后台页或已被替换的 Page 会报 `ERR_INACTIVE_PAGE`。`miniProgram.query/queryAll` 可用于原生权限弹窗等模拟器 UI，同时排除后台小程序页面。`page.query` 读取支付宝页面的真实加载参数，包含原生点击导航和重新 connect 后的参数。
+
+导航方法等待平台 success/fail 回调及对应页面栈、实例变化。平台拒绝导航时抛出 `ERR_NAVIGATION`，保留平台错误文案及可用的 `platformCode`。`launch()` 还会等待逻辑层与渲染文档一致、启动阶段结束；运行时暂未就绪时 `currentPage()` 可返回 null。
+
 元素操作通过真正的调试协议输入事件完成，不调用业务事件处理函数来代替点击，不直接修改 input.value 或框架状态。点击前检查位置稳定和逐层 iframe 遮挡。页面重建后旧元素可能失效，应重新查询。当前还未提供拖拽、多点触摸、复杂滚动和完整的微信 automator API 兼容层。
 
 ## 测试
@@ -144,7 +148,7 @@ const result = await miniProgram.evaluate(
 - `npm test`：本地 HTTP/WebSocket 通信测试，覆盖乱序响应、异常、断线、超时、目标选择、隔离目录及版本校验。
 - `npm run test:types`：验证 TypeScript 中的 CommonJS 与 ESM 默认导入、参数与返回类型。
 - `npm run test:package`：本地打包后在全新目录仅安装生产依赖，检查发布白名单、公共入口和运行时依赖；需要访问 npm registry。
-- `npm run test:e2e`：自行启动官方 IDE，自动导入仓库内 `examples/native-miniapp`，验证计数、中文输入、替换/清空、跳转传参、返回、截图及旧元素失效。结果和 IDE 日志写入 gitignored 的 `.artifacts/`。
+- `npm run test:e2e`：自行启动官方 IDE，自动导入仓库内 `examples/native-miniapp`，验证计数、中文输入、替换/清空、同路径实例隔离、真实参数、原生点击后重新连接、导航失败、返回、截图及旧元素失效，并覆盖重复冷启动后立即导航。结果和 IDE 日志写入 gitignored 的 `.artifacts/`。
 - `npm run check:package`：预览 npm 包文件清单，不发布。
 
 已有业务项目可参考 [页面 E2E 初始化示例](https://github.com/iplaycodex/alipay-miniprogram-automator/tree/main/examples/real-project-e2e)：在独立编译产物副本中加入原生测试引导页，再进入目标页，按业务请求超时等待数据就绪，并显式处理已知权限弹窗。该方式不覆盖默认首页启动流程。

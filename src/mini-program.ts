@@ -12,6 +12,7 @@ import type {
   InspectorConnection,
   KeyOptions,
   OwnedIDE,
+  PageIdentity,
   RendererResponse,
   ScreenshotOptions,
   WaitOptions,
@@ -117,57 +118,151 @@ export class MiniProgram {
   }
 
   async pageStack(): Promise<Page[]> {
-    const pages = await this.evaluate(() =>
-      getCurrentPages().map((page) => ({
+    const pages = await this.evaluate(() => {
+      if (typeof getCurrentPages !== 'function') return null
+      return getCurrentPages().map((page) => ({
         path: page.route || page.__route__,
-        query: page.options || {},
-      })),
-    )
-    return pages.map((page) => new Page(this, page.path!, page.query))
+        id: String(page.$id),
+        viewId: String(page.$viewId),
+        query: page.getLoadOptions(),
+      }))
+    })
+    if (!Array.isArray(pages))
+      throw error('ERR_RUNTIME_NOT_READY', 'Mini-program worker is not ready')
+    const documents = await this.renderer<Record<string, string>>(`(() => {
+      const store = window.__alipayAutomatorDocuments ||= { epoch: Date.now() + ':' + Math.random(), sequence: 0, ids: new WeakMap() }
+      const found = {}
+      for (const frame of document.querySelectorAll('iframe.tr-page-iframe')) {
+        const doc = frame.contentDocument
+        const viewId = frame.contentWindow?.__LyraViewId
+        if (!doc?.body || doc.readyState !== 'complete' || viewId === undefined) continue
+        if (!store.ids.has(doc)) store.ids.set(doc, store.epoch + ':' + ++store.sequence)
+        found[String(viewId)] = store.ids.get(doc)
+      }
+      return found
+    })()`)
+    return pages.map((page) => {
+      if (!page.path || !documents[page.viewId])
+        throw error('ERR_RUNTIME_NOT_READY', 'Mini-program page renderer is not ready')
+      return new Page(this, page.path, page.query, {
+        id: page.id,
+        viewId: page.viewId,
+        documentId: documents[page.viewId],
+      })
+    })
   }
 
   async currentPage(): Promise<Page | null> {
-    const pages = await this.pageStack()
-    return pages[pages.length - 1] || null
+    try {
+      const pages = await this.pageStack()
+      return pages[pages.length - 1] || null
+    } catch (cause) {
+      if (cause instanceof Error && 'code' in cause && cause.code === 'ERR_RUNTIME_NOT_READY')
+        return null
+      throw cause
+    }
   }
 
-  private async _changeRoute(method: 'reLaunch' | 'navigateTo', url: string): Promise<Page> {
-    if (typeof url !== 'string' || !url)
-      throw error('ERR_OPTIONS', 'A mini-program route is required')
-    await this.evaluate(
-      (name, value) => {
-        my[name]({ url: value })
-        return true
+  /** @internal Wait for matching worker/render documents and the IDE startup phase to settle. */
+  async _waitForReady(timeout = this.timeout): Promise<Page[]> {
+    let previous = '',
+      stable = 0
+    return this.waitFor(
+      async () => {
+        const pages = await this._readyPages()
+        const signature = pages && JSON.stringify(pages.map((page) => page.identity))
+        stable = signature && signature === previous ? stable + 1 : 0
+        previous = signature || ''
+        return pages && stable >= 2 ? pages : null
       },
-      method,
-      url,
+      { timeout, message: 'Mini-program worker and renderer did not become ready' },
     )
-    const expected = url.replace(/^\//, '').split('?')[0]
+  }
+
+  private async _readyPages(): Promise<Page[] | null> {
+    try {
+      if (
+        await this.renderer(
+          "typeof window.__LYRA_GLOBAL_RUNTIME_API__?.evaluateJavaScriptInWorker !== 'function' || window.__LYRA_GLOBAL_RUNTIME_API__?.runtime?.isAppStarting === true",
+        )
+      )
+        return null
+      const pages = await this.pageStack()
+      return pages.length ? pages : null
+    } catch (cause) {
+      if (cause instanceof Error && 'code' in cause && cause.code === 'ERR_RUNTIME_NOT_READY')
+        return null
+      throw cause
+    }
+  }
+
+  private async _navigate(
+    method: 'reLaunch' | 'navigateTo' | 'navigateBack',
+    url?: string,
+  ): Promise<Page> {
+    const before = await this._waitForReady()
+    if (method === 'navigateBack' && before.length < 2)
+      throw error('ERR_NAVIGATION', 'There is no previous page')
+    const result = await this.evaluate(
+      (name, value) =>
+        new Promise<{
+          ok: boolean
+          message?: string
+          platformCode?: string | number
+        }>((resolve) => {
+          my[name]({
+            ...(value === null ? {} : { url: value }),
+            success: () => resolve({ ok: true }),
+            fail: (cause) =>
+              resolve({
+                ok: false,
+                message: cause.errorMessage || cause.errMsg || 'Native navigation failed',
+                platformCode: cause.error,
+              }),
+          })
+        }),
+      method,
+      url ?? null,
+    )
+    if (!result?.ok)
+      throw Object.assign(
+        error('ERR_NAVIGATION', result?.message || 'Native navigation did not succeed'),
+        { platformCode: result?.platformCode },
+      )
+    const expectedPath = url?.replace(/^\//, '').split('?')[0]
+    const expectedPrevious = before[before.length - 2]?.identity
+    const oldIdentity = before[before.length - 1].identity
     return this.waitFor(async () => {
-      const page = await this.currentPage()
-      return page?.path === expected ? page : null
-    }, `Page did not open: ${expected}`)
+      const pages = await this._readyPages()
+      if (!pages) return null
+      const page = pages[pages.length - 1]
+      const same = (left: PageIdentity | undefined, right: PageIdentity | undefined) =>
+        left?.id === right?.id && left?.documentId === right?.documentId
+      if (method === 'navigateBack')
+        return pages.length === before.length - 1 && same(page.identity, expectedPrevious)
+          ? page
+          : null
+      const expectedLength = method === 'reLaunch' ? 1 : before.length + 1
+      return page.path === expectedPath &&
+        pages.length === expectedLength &&
+        !same(page.identity, oldIdentity)
+        ? page
+        : null
+    }, `Native ${method} completed but the expected page instance did not become ready`)
   }
 
   reLaunch(url: string): Promise<Page> {
-    return this._changeRoute('reLaunch', url)
+    if (typeof url !== 'string' || !url)
+      return Promise.reject(error('ERR_OPTIONS', 'A mini-program route is required'))
+    return this._navigate('reLaunch', url)
   }
   navigateTo(url: string): Promise<Page> {
-    return this._changeRoute('navigateTo', url)
+    if (typeof url !== 'string' || !url)
+      return Promise.reject(error('ERR_OPTIONS', 'A mini-program route is required'))
+    return this._navigate('navigateTo', url)
   }
-
-  async navigateBack(): Promise<Page> {
-    const pages = await this.pageStack()
-    if (pages.length < 2) throw error('ERR_NAVIGATION', 'There is no previous page')
-    const expected = pages[pages.length - 2].path
-    await this.evaluate(() => {
-      my.navigateBack()
-      return true
-    })
-    return this.waitFor(async () => {
-      const page = await this.currentPage()
-      return page?.path === expected ? page : null
-    }, `navigateBack did not return to ${expected}`)
+  navigateBack(): Promise<Page> {
+    return this._navigate('navigateBack')
   }
 
   waitFor<T>(check: () => T, options?: WaitOptions): Promise<WaitResult<T>>
@@ -185,32 +280,57 @@ export class MiniProgram {
     selector: string,
     text: string | undefined,
     all: boolean,
+    page?: PageIdentity,
   ): Promise<Element[]> {
     if (typeof selector !== 'string' || !selector)
       throw error('ERR_OPTIONS', 'A CSS selector is required')
+    const active = await this.currentPage()
+    if (!active?.identity) throw error('ERR_RUNTIME_NOT_READY', 'There is no active page')
+    if (page && (active.identity.id !== page.id || active.identity.documentId !== page.documentId))
+      throw error('ERR_INACTIVE_PAGE', 'Page is no longer current')
+    const identity = page || active.identity
     const matches = await this.renderer<number[]>(`(() => {
       const store = window.__alipayAutomatorElements || (window.__alipayAutomatorElements = { sequence: 0, nodes: new Map(), ids: new WeakMap() })
       for (const [id, node] of store.nodes) {
         if (!node.isConnected || !node.ownerDocument.defaultView) store.nodes.delete(id)
       }
+      const identity = ${JSON.stringify(identity)}
+      const pageOnly = ${!!page}
+      const root = Array.from(document.querySelectorAll('iframe.tr-page-iframe')).find(frame =>
+        String(frame.contentWindow?.__LyraViewId) === identity.viewId &&
+        window.__alipayAutomatorDocuments?.ids.get(frame.contentDocument) === identity.documentId)
+      if (!root?.contentDocument) throw Object.assign(new Error('Page document was replaced'), {code:'ERR_INACTIVE_PAGE'})
       const found = [], visited = new Set()
       function find(doc) {
         if (!doc?.defaultView || visited.has(doc)) return
         visited.add(doc)
         for (const node of doc.querySelectorAll(${JSON.stringify(selector)})) {
           if (${JSON.stringify(text)} !== undefined && !node.textContent.includes(${JSON.stringify(text)})) continue
+          const container = node.closest('.tr-page')
+          if (container) {
+            const frame = container.querySelector('iframe.tr-page-iframe')
+            if (frame && frame !== root) continue
+          }
           const rect = node.getBoundingClientRect()
           if (rect.width <= 0 || rect.height <= 0) continue
           let id = store.ids.get(node)
           if (!id || !store.nodes.has(id)) { id = ++store.sequence; store.ids.set(node, id); store.nodes.set(id, node) }
           found.push(id)
         }
-        for (const frame of doc.querySelectorAll('iframe')) { try { find(frame.contentDocument) } catch (_) {} }
+        for (const frame of doc.querySelectorAll('iframe')) {
+          if (frame.matches('.tr-page-iframe') && frame !== root) continue
+          try { find(frame.contentDocument) } catch (_) {}
+        }
       }
-      find(document)
+      find(pageOnly ? root.contentDocument : document)
       return ${all ? 'found' : 'found.slice(0, 1)'}
     })()`)
     return matches.map((id) => new Element(this, id, selector))
+  }
+
+  /** @internal Query only the specified current page's renderer document. */
+  _queryPage(selector: string, all: boolean, identity: PageIdentity): Promise<Element[]> {
+    return this._query(selector, undefined, all, identity)
   }
 
   async query(selector: string, text?: string): Promise<Element | null> {

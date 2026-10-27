@@ -1,4 +1,6 @@
 node_modules/
+out/
+.build-*/
 .artifacts/
 .runtime/
 coverage/

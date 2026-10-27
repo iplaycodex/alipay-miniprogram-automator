@@ -1,19 +1,63 @@
 {
   "name": "alipay-miniprogram-automator",
-  "version": "0.1.0-alpha.0",
+  "version": "1.0.0",
   "description": "Unofficial automation SDK for the simulator in Alipay Mini Program Studio",
-  "main": "index.js",
-  "exports": { ".": "./index.js" },
-  "files": ["index.js", "src/", "README.md", "docs/VALIDATION.md", "LICENSE"],
-  "engines": { "node": ">=22" },
+  "type": "commonjs",
+  "main": "./out/index.js",
+  "types": "./out/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./out/index.d.ts",
+      "require": "./out/index.js",
+      "default": "./out/index.js"
+    }
+  },
+  "files": [
+    "out/",
+    "README.md",
+    "docs/VALIDATION.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "build": "node scripts/build.js",
+    "prepare": "npm run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "npm run format:check && node scripts/check-syntax.js",
+    "pretest": "npm run build",
     "test": "node --test test/*.test.js",
+    "pretest:e2e": "npm run build",
     "test:e2e": "node --test --test-concurrency=1 test/ide.e2e.js",
+    "pretest:types": "npm run build",
+    "test:types": "tsc --project test/tsconfig.json",
+    "pretest:package": "npm run build",
+    "test:package": "node --test test/package.e2e.js",
     "check:package": "npm pack --dry-run --json"
   },
-  "repository": { "type": "git", "url": "git+https://github.com/iplaycodex/alipay-miniprogram-automator.git" },
-  "bugs": { "url": "https://github.com/iplaycodex/alipay-miniprogram-automator/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iplaycodex/alipay-miniprogram-automator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iplaycodex/alipay-miniprogram-automator/issues"
+  },
   "license": "MIT",
-  "keywords": ["alipay", "miniprogram", "automator", "e2e", "testing"],
-  "dependencies": { "ws": "^8.22.0" }
+  "keywords": [
+    "alipay",
+    "miniprogram",
+    "automator",
+    "e2e",
+    "testing"
+  ],
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2"
+  }
 }

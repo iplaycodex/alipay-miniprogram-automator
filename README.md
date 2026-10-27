@@ -71,7 +71,7 @@ SDK 源码使用 TypeScript，开启 strict，包内的类型声明由编译器�
 
 ## `launch(options)`
 
-启动自己的 IDE 实例，使用独立用户目录与本机调试端口，通过官方 IDE 的项目导入界面加载项目，然后等待小程序就绪。
+启动自己的 IDE 实例，使用独立用户目录与本机调试端口，通过官方 IDE 的项目导入界面明确选择支付宝小程序类型，然后等待小程序就绪。导入前会将项目路径解析为真实路径，避免 macOS 符号链接目录触发 IDE 的项目边界检查。
 
 | 选项                     | 说明                                                                                                    |
 | ------------------------ | ------------------------------------------------------------------------------------------------------- |
@@ -146,6 +146,8 @@ const result = await miniProgram.evaluate(
 - `npm run test:package`：本地打包后在全新目录仅安装生产依赖，检查发布白名单、公共入口和运行时依赖；需要访问 npm registry。
 - `npm run test:e2e`：自行启动官方 IDE，自动导入仓库内 `examples/native-miniapp`，验证计数、中文输入、替换/清空、跳转传参、返回、截图及旧元素失效。结果和 IDE 日志写入 gitignored 的 `.artifacts/`。
 - `npm run check:package`：预览 npm 包文件清单，不发布。
+
+已有业务项目可参考 [页面 E2E 初始化示例](https://github.com/iplaycodex/alipay-miniprogram-automator/tree/main/examples/real-project-e2e)：在独立编译产物副本中加入原生测试引导页，再进入目标页，按业务请求超时等待数据就绪，并显式处理已知权限弹窗。该方式不覆盖默认首页启动流程。
 
 完整验证环境和范围见 [docs/VALIDATION.md](docs/VALIDATION.md)。公开包的 `files` 白名单只包含自研库、说明文档和许可证，不包含业务项目、IDE 文件、测试用户目录和日志。
 

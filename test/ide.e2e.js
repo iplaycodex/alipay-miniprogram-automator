@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const os = require('node:os')
 const automator = require('..')
 
 test(
@@ -10,6 +11,10 @@ test(
   async (t) => {
     const output = path.resolve('.artifacts')
     fs.mkdirSync(output, { recursive: true })
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'alipay-native-link-'))
+    const projectLink = path.join(fixture, 'project')
+    fs.symlinkSync(path.resolve('examples/native-miniapp'), projectLink, 'dir')
+    t.after(() => fs.rmSync(fixture, { recursive: true, force: true }))
     let miniProgram, outerError
     const results = []
     const step = async (name, run) =>
@@ -24,7 +29,7 @@ test(
       })
     try {
       miniProgram = await automator.launch({
-        projectPath: path.resolve('examples/native-miniapp'),
+        projectPath: projectLink,
         idePath: process.env.ALIPAY_IDE_PATH || undefined,
         logPath: path.join(output, 'ide.log'),
         timeout: 90000,
@@ -35,6 +40,7 @@ test(
         assert(main instanceof automator.Page)
         assert.equal(main.path, 'pages/index/index')
         assert.equal(miniProgram.info.ideVersion, '3.10.5')
+        assert.equal(miniProgram.info.projectPath, fs.realpathSync(projectLink))
       })
       await step(
         'worker evaluation reads the built-in my API and serializes Chinese arguments',
@@ -49,6 +55,7 @@ test(
           )
           assert.equal(info.value, '中文参数')
           assert(info.version)
+          assert.equal(info.version, '2.10.15')
           assert(info.width > 0)
         },
       )

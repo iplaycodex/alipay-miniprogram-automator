@@ -31,7 +31,7 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
   const timeout = options.timeout || 90000
   if (!options.projectPath)
     throw error('ERR_OPTIONS', 'launch requires projectPath containing the Alipay build output')
-  const projectPath = path.resolve(options.projectPath)
+  let projectPath = path.resolve(options.projectPath)
   if (
     !fs.existsSync(path.join(projectPath, 'app.json')) ||
     !fs.existsSync(path.join(projectPath, 'app.js'))
@@ -41,6 +41,8 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
       'projectPath must contain app.json and app.js; compile framework projects with the alipay target first',
     )
   }
+  // The IDE compiler compares physical file paths with its project root.
+  projectPath = fs.realpathSync(projectPath)
   const idePath =
     options.idePath ||
     (process.platform === 'darwin'

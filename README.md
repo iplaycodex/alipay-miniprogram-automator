@@ -65,9 +65,9 @@ main().catch((error) => {
 
 选择器对应官方模拟器的**实际渲染 DOM**，不保证与微信 automator 的选择器语义完全一致。例如支付宝 Input 的实际可编辑节点可能是 `.message input`，占位提示可能由单独的节点渲染。
 
-包内包含 TypeScript 声明；TypeScript 测试工程需安装 `@types/node`。ESM 工程可以使用 `import automator from 'alipay-miniprogram-automator'`。
+SDK 源码使用 TypeScript，开启 strict，包内的类型声明由编译器从实现自动生成；TypeScript 测试工程需安装 `@types/node`。ESM 工程可以使用 `import automator from 'alipay-miniprogram-automator'`。
 
-拉取源码或从 Git 安装时，若显式禁用了 npm 生命周期脚本，需要手动执行 `npm run build`。安装已打包的 tarball 无需本地构建。
+拉取源码时需安装开发依赖以编译 SDK。若从 Git 安装时显式禁用了 npm 生命周期脚本，需要先安装构建依赖并手动执行 `npm run build`。安装已打包的 tarball 无需本地构建。
 
 ## `launch(options)`
 
@@ -138,8 +138,9 @@ const result = await miniProgram.evaluate(
 
 ## 测试
 
-- `npm run build`：校验源码语法，生成 CommonJS 与类型声明到 `out/`；`npm ci`、从 GitHub 安装和 `npm pack` 会自动构建。
-- `npm run format` / `npm run lint`：统一格式，以及检查格式和 JavaScript 语法。
+- `npm run build`：用 tsc 严格编译 `src/*.ts`，生成 CommonJS 与类型声明到 `out/`；`npm ci`、从 GitHub 安装和 `npm pack` 会自动构建。
+- `npm run format` / `npm run lint`：统一格式，以及检查格式、TypeScript 类型和辅助 JavaScript 语法。
+- `npm run typecheck`：只检查 SDK 的严格 TypeScript 类型，不生成产物。
 - `npm test`：本地 HTTP/WebSocket 通信测试，覆盖乱序响应、异常、断线、超时、目标选择、隔离目录及版本校验。
 - `npm run test:types`：验证 TypeScript 中的 CommonJS 与 ESM 默认导入、参数与返回类型。
 - `npm run test:package`：本地打包后在全新目录仅安装生产依赖，检查发布白名单、公共入口和运行时依赖；需要访问 npm registry。

@@ -27,6 +27,15 @@ async function usePublicAPI() {
 automator.connect({ host: '::1', port: 19387, simulatorId: 4 })
 automator.MiniProgram.connect({ profilePath: '/tmp/profile' })
 
+// Existing callers may provide a simple connection without a generic evaluate method.
+new automator.MiniProgram({ evaluate: async () => 'value', close() {} }, 1, {
+  ideVersion: '3.10.5',
+  platform: 'darwin',
+  pid: 1,
+  profilePath: '/tmp/profile',
+  simulators: [],
+})
+
 // @ts-expect-error projectPath is required.
 automator.launch({})
 // @ts-expect-error Remote inspector hosts are unsupported.

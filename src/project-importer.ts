@@ -1,6 +1,7 @@
-const { waitFor, error } = require('./util')
+import { waitFor, error } from './util'
+import type { Inspector } from './inspector'
 
-async function renderer(inspector, expression) {
+async function renderer(inspector: Inspector, expression: string): Promise<unknown> {
   return inspector.evaluate(`(() => {
     const windows = process.mainModule.require('electron').webContents.getAllWebContents()
       .filter(w => w.getType() === 'window' && w.getURL().includes('/mini-studio-core/out/browser/index.html'))
@@ -9,7 +10,11 @@ async function renderer(inspector, expression) {
   })()`)
 }
 
-async function openProject(inspector, projectPath, timeout) {
+export async function openProject(
+  inspector: Inspector,
+  projectPath: string,
+  timeout: number,
+): Promise<void> {
   await waitFor(
     async () => {
       try {
@@ -103,5 +108,3 @@ async function openProject(inspector, projectPath, timeout) {
       .catch(() => {})
   }
 }
-
-module.exports = { openProject }

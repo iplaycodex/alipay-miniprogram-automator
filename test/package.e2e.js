@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { execFileSync } = require('node:child_process')
+const { execFileSync, spawnSync } = require('node:child_process')
 
 test(
   'packed SDK installs with production dependencies and preserves its public entry',
@@ -21,15 +21,31 @@ test(
       'README.md',
       'LICENSE',
       'src',
-      'types',
+      'tsconfig.json',
       'scripts',
       'docs',
     ]) {
       fs.cpSync(path.join(root, name), path.join(packageRoot, name), { recursive: true })
     }
-    // No devDependencies or pre-existing output: prepare must build with Node alone.
+    // Build inputs include TypeScript tooling; the published tarball must not require it.
+    fs.symlinkSync(
+      path.join(root, 'node_modules'),
+      path.join(packageRoot, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     fs.mkdirSync(path.join(packageRoot, 'out'))
     fs.writeFileSync(path.join(packageRoot, 'out/obsolete.js'), 'throw new Error("stale artifact")')
+    const invalidSource = path.join(packageRoot, 'src/intentional-type-error.ts')
+    fs.writeFileSync(invalidSource, 'const invalid: number = "type error"\nexport { invalid }\n')
+    const failedBuild = spawnSync(process.execPath, [path.join(packageRoot, 'scripts/build.js')], {
+      cwd: packageRoot,
+      encoding: 'utf8',
+      timeout: 30000,
+    })
+    assert.notEqual(failedBuild.status, 0)
+    assert.match(failedBuild.stdout + failedBuild.stderr, /TS2322/)
+    assert(fs.existsSync(path.join(packageRoot, 'out/obsolete.js')))
+    fs.rmSync(invalidSource)
     const pack = JSON.parse(
       execFileSync(process.execPath, [npm, 'pack', '--json', '--pack-destination', temporary], {
         cwd: packageRoot,

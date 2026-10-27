@@ -1,8 +1,8 @@
-const { error } = require('./util')
+import { error } from './util'
 
 const VERIFIED_IDE_VERSIONS = ['3.10.5']
 
-function assertSupportedVersion(version, allowUnverifiedVersion = false) {
+export function assertSupportedVersion(version: string, allowUnverifiedVersion = false): void {
   if (!allowUnverifiedVersion && !VERIFIED_IDE_VERSIONS.includes(version)) {
     throw error(
       'ERR_UNSUPPORTED_IDE',
@@ -10,5 +10,3 @@ function assertSupportedVersion(version, allowUnverifiedVersion = false) {
     )
   }
 }
-
-module.exports = { assertSupportedVersion }

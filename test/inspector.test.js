@@ -2,9 +2,9 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const http = require('node:http')
 const { WebSocketServer } = require('ws')
-const { Inspector } = require('../src/inspector')
-const { MiniProgram } = require('../src/mini-program')
-const { waitFor } = require('../src/util')
+const { Inspector } = require('../out/inspector')
+const { MiniProgram } = require('../out/mini-program')
+const { waitFor } = require('../out/util')
 const automator = require('..')
 
 async function fixture(t, handler, discovery) {

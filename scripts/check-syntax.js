@@ -14,6 +14,6 @@ function check(directory) {
   }
 }
 
-for (const name of ['src', 'scripts', 'test', 'examples']) check(path.join(root, name))
+for (const name of ['scripts', 'test', 'examples']) check(path.join(root, name))
 new Script(fs.readFileSync(path.join(root, 'index.js'), 'utf8'), { filename: 'index.js' })
 console.log('JavaScript syntax checks passed')

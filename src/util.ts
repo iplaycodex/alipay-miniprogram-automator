@@ -1,33 +1,36 @@
-const fs = require('node:fs')
-const path = require('node:path')
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+import fs from 'node:fs'
+import path from 'node:path'
+import type { AutomatorError, WaitOptions, WaitResult } from './types'
 
-function normalizePath(value) {
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
+
+export function normalizePath(value: string): string {
   const resolved = path.resolve(value)
   return fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved
 }
 
-function error(code, message) {
+export function error(code: string, message: string): AutomatorError {
   return Object.assign(new Error(message), { code })
 }
 
-async function waitFor(
-  check,
-  { timeout = 15000, interval = 100, message = 'Condition timed out' } = {},
-) {
+export async function waitFor<T>(
+  check: () => T,
+  { timeout = 15000, interval = 100, message = 'Condition timed out' }: WaitOptions = {},
+): Promise<WaitResult<T>> {
   const deadline = Date.now() + timeout
   do {
     const remaining = deadline - Date.now()
     if (remaining <= 0) break
-    let timer
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const result = await Promise.race([
         Promise.resolve().then(check),
-        new Promise((_, reject) => {
+        new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(error('ERR_TIMEOUT', message)), remaining)
         }),
       ])
-      if (result) return result
+      if (result) return result as WaitResult<T>
     } finally {
       clearTimeout(timer)
     }
@@ -35,5 +38,3 @@ async function waitFor(
   } while (Date.now() < deadline)
   throw error('ERR_TIMEOUT', message)
 }
-
-module.exports = { sleep, waitFor, error, normalizePath }

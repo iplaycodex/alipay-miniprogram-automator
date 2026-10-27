@@ -1,33 +1,42 @@
-class Element {
-  constructor(miniProgram, id, selector) {
+import type { MiniProgram } from './mini-program'
+import type { Bounds, WaitOptions } from './types'
+
+export class Element {
+  miniProgram: MiniProgram
+  id: number
+  selector: string
+  constructor(miniProgram: MiniProgram, id: number, selector: string) {
     this.miniProgram = miniProgram
     this.id = id
     this.selector = selector
   }
-  inspect(fn) {
-    return this.miniProgram.renderer(`(() => {
+  /** Escape hatch for a renderer DOM callback serialized across the Inspector boundary. */
+  inspect<Result>(fn: (node: any) => Result): Promise<Awaited<Result>>
+  inspect<Result = unknown>(expression: string): Promise<Result>
+  inspect<Result>(fn: string | ((node: any) => Result)): Promise<Awaited<Result>> {
+    return this.miniProgram.renderer<Awaited<Result>>(`(() => {
       const node = window.__alipayAutomatorElements?.nodes.get(${this.id})
       if (!node?.isConnected || !node.ownerDocument.defaultView) throw Object.assign(new Error('Element is no longer attached'), {code:'ERR_STALE_ELEMENT'})
       return (${fn.toString()})(node)
     })()`)
   }
-  text() {
-    return this.inspect((node) => node.innerText || node.textContent)
+  text(): Promise<string> {
+    return this.inspect((node: HTMLElement) => node.innerText || node.textContent!)
   }
-  value() {
-    return this.inspect((node) => node.value)
+  value(): Promise<string | undefined> {
+    return this.inspect((node: HTMLElement & { value?: string }) => node.value)
   }
-  attribute(name) {
-    return this.inspect(`node => node.getAttribute(${JSON.stringify(name)})`)
+  attribute(name: string): Promise<string | null> {
+    return this.inspect<string | null>(`node => node.getAttribute(${JSON.stringify(name)})`)
   }
-  bounds() {
-    return this.inspect((node) => {
+  bounds(): Promise<Bounds> {
+    return this.inspect((node: HTMLElement) => {
       const rect = node.getBoundingClientRect()
       let x = rect.x,
         y = rect.y,
         width = rect.width,
         height = rect.height
-      let frame = node.ownerDocument.defaultView.frameElement
+      let frame = node.ownerDocument.defaultView!.frameElement as HTMLIFrameElement | null
       while (frame) {
         const bounds = frame.getBoundingClientRect()
         const sx = bounds.width / frame.offsetWidth,
@@ -36,14 +45,14 @@ class Element {
         y = bounds.y + y * sy
         width *= sx
         height *= sy
-        frame = frame.ownerDocument.defaultView.frameElement
+        frame = frame.ownerDocument.defaultView!.frameElement as HTMLIFrameElement | null
       }
       return { x, y, width, height }
     })
   }
-  waitForStable(options = {}) {
+  waitForStable(options: WaitOptions | number = {}): Promise<Bounds> {
     if (typeof options === 'number') options = { timeout: options }
-    let previous,
+    let previous: string | undefined,
       stable = 0
     return this.miniProgram.waitFor(
       async () => {
@@ -58,11 +67,11 @@ class Element {
       { message: `Element did not stop moving: ${this.selector}`, ...options },
     )
   }
-  async tap(options = {}) {
+  async tap(options: WaitOptions = {}): Promise<void> {
     await this.waitForStable(options)
     const point = await this.miniProgram.waitFor(
       () =>
-        this.inspect((node) => {
+        this.inspect((node: HTMLElement) => {
           if (node.matches(':disabled') || node.getAttribute('aria-disabled') === 'true')
             throw Object.assign(new Error('Element is disabled'), { code: 'ERR_ELEMENT_DISABLED' })
           const rect = node.getBoundingClientRect()
@@ -71,7 +80,7 @@ class Element {
           let doc = node.ownerDocument
           let hit = doc.elementFromPoint(x, y)
           if (!hit || !(hit === node || node.contains(hit))) return null
-          let frame = doc.defaultView.frameElement
+          let frame = doc.defaultView!.frameElement as HTMLIFrameElement | null
           while (frame) {
             const bounds = frame.getBoundingClientRect()
             x = bounds.x + (x * bounds.width) / frame.offsetWidth
@@ -79,7 +88,7 @@ class Element {
             doc = frame.ownerDocument
             hit = doc.elementFromPoint(x, y)
             if (!hit || !(hit === frame || frame.contains(hit))) return null
-            frame = doc.defaultView.frameElement
+            frame = doc.defaultView!.frameElement as HTMLIFrameElement | null
           }
           return { x, y }
         }),
@@ -87,11 +96,11 @@ class Element {
     )
     await this.miniProgram.mouseClick(point.x, point.y)
   }
-  async input(text) {
+  async input(text: string | number): Promise<void> {
     await this.tap()
     await this.miniProgram.insertText(text)
   }
-  async fill(text) {
+  async fill(text: string | number): Promise<void> {
     await this.tap()
     await this.miniProgram.pressKey({
       key: 'a',
@@ -104,5 +113,3 @@ class Element {
     else await this.miniProgram.pressKey({ key: 'Backspace', code: 'Backspace', keyCode: 8 })
   }
 }
-
-module.exports = { Element }

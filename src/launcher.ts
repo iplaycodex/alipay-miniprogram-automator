@@ -1,29 +1,33 @@
-const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
-const net = require('node:net')
-const { spawn } = require('node:child_process')
-const { Inspector } = require('./inspector')
-const { MiniProgram } = require('./mini-program')
-const { openProject } = require('./project-importer')
-const { assertSupportedVersion } = require('./ide-version')
-const { waitFor, error } = require('./util')
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import net from 'node:net'
+import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import type { AddressInfo } from 'node:net'
+import type { LaunchOptions } from './types'
+import { Inspector } from './inspector'
+import { MiniProgram } from './mini-program'
+import { openProject } from './project-importer'
+import { assertSupportedVersion } from './ide-version'
+import { waitFor, error } from './util'
 
-function availablePort(port = 0) {
+function availablePort(port = 0): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer()
     server.once('error', (cause) =>
       reject(error('ERR_IDE_PORT', `Inspector port is not available: ${cause.message}`)),
     )
     server.listen(port, '127.0.0.1', () => {
-      const selected = server.address().port
+      const selected = (server.address() as AddressInfo).port
       server.close(() => resolve(selected))
     })
   })
 }
 
 /** Launch the installed IDE with an isolated profile and import a native Alipay project. */
-async function launch(options = {}) {
+export function launch(options: LaunchOptions): Promise<MiniProgram>
+export async function launch(options: Partial<LaunchOptions> = {}): Promise<MiniProgram> {
   const timeout = options.timeout || 90000
   if (!options.projectPath)
     throw error('ERR_OPTIONS', 'launch requires projectPath containing the Alipay build output')
@@ -53,7 +57,7 @@ async function launch(options = {}) {
   const logPath = path.resolve(options.logPath || path.join(profilePath, 'ide.log'))
   fs.mkdirSync(path.dirname(logPath), { recursive: true })
   const log = fs.openSync(logPath, 'a')
-  let child
+  let child: ChildProcess
   try {
     child = spawn(idePath, [`--inspect=127.0.0.1:${port}`, `--user-data-dir=${profilePath}`], {
       cwd: projectPath,
@@ -63,11 +67,11 @@ async function launch(options = {}) {
   } finally {
     fs.closeSync(log)
   }
-  let startError
+  let startError: Error | undefined
   child.on('error', (cause) => {
     startError = cause
   })
-  let inspector
+  let inspector: Inspector | null | undefined
   const checkProcess = () => {
     if (startError) throw startError
     if (child.exitCode !== null || child.signalCode !== null)
@@ -89,7 +93,11 @@ async function launch(options = {}) {
       async () => {
         checkProcess()
         try {
-          return await inspector.evaluate(`(() => {
+          return await inspector!.evaluate<{
+            pid: number
+            profilePath: string
+            ideVersion: string
+          } | null>(`(() => {
           if (!process.mainModule?.require) return null
           const app = process.mainModule.require('electron').app
           return app.isReady() ? {pid:process.pid,profilePath:app.getPath('userData'),ideVersion:app.getVersion()} : null
@@ -118,7 +126,12 @@ async function launch(options = {}) {
             timeout: Math.min(timeout, 15000),
           })
         } catch (cause) {
-          if (['ERR_UNSUPPORTED_IDE', 'ERR_IDE_PROFILE', 'ERR_IDE_PROCESS'].includes(cause.code))
+          if (
+            cause instanceof Error &&
+            'code' in cause &&
+            typeof cause.code === 'string' &&
+            ['ERR_UNSUPPORTED_IDE', 'ERR_IDE_PROFILE', 'ERR_IDE_PROCESS'].includes(cause.code)
+          )
             throw cause
           return null
         }
@@ -149,10 +162,8 @@ async function launch(options = {}) {
     inspector?.close()
     try {
       if (process.platform === 'win32') child.kill('SIGTERM')
-      else process.kill(-child.pid, 'SIGTERM')
+      else process.kill(-child.pid!, 'SIGTERM')
     } catch (_) {}
     throw cause
   }
 }
-
-module.exports = { launch }

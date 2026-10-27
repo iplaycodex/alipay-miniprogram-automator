@@ -1,16 +1,34 @@
-const fs = require('node:fs')
-const path = require('node:path')
-const { Inspector } = require('./inspector')
-const { waitFor, error, normalizePath } = require('./util')
-const { Page } = require('./page')
-const { Element } = require('./element')
-const { assertSupportedVersion } = require('./ide-version')
+import fs from 'node:fs'
+import path from 'node:path'
+import { Inspector } from './inspector'
+import { waitFor, error, normalizePath } from './util'
+import { Page } from './page'
+import { Element } from './element'
+import { assertSupportedVersion } from './ide-version'
 
-class MiniProgram {
-  static async connect(options = {}) {
+import type {
+  ConnectOptions,
+  IDEInfo,
+  InspectorConnection,
+  KeyOptions,
+  OwnedIDE,
+  RendererResponse,
+  ScreenshotOptions,
+  WaitOptions,
+  WaitResult,
+} from './types'
+
+export class MiniProgram {
+  inspector: InspectorConnection
+  targetId: number
+  info: IDEInfo
+  timeout: number
+  interval: number
+  _owned: OwnedIDE | null
+  static async connect(options: ConnectOptions = {}): Promise<MiniProgram> {
     const inspector = await Inspector.connect(options)
     try {
-      const info = await inspector.evaluate(`(() => {
+      const info = await inspector.evaluate<IDEInfo>(`(() => {
         const electron = process.mainModule.require('electron')
         return {
           ideVersion: electron.app.getVersion(), platform: process.platform, pid: process.pid,
@@ -56,7 +74,12 @@ class MiniProgram {
     }
   }
 
-  constructor(inspector, targetId, info, options = {}) {
+  constructor(
+    inspector: InspectorConnection,
+    targetId: number,
+    info: IDEInfo,
+    options: ConnectOptions = {},
+  ) {
     this.inspector = inspector
     this.targetId = targetId
     this.info = info
@@ -65,9 +88,9 @@ class MiniProgram {
     this._owned = null
   }
 
-  async renderer(expression) {
+  async renderer<T = unknown>(expression: string): Promise<T> {
     const wrapped = `Promise.resolve().then(() => (${expression})).then(value => ({ok:true,value}), cause => ({ok:false,message:String(cause?.message || cause),code:cause?.code}))`
-    const result = await this.inspector.evaluate(`(() => {
+    const result: RendererResponse<T> = await this.inspector.evaluate(`(() => {
       const target = process.mainModule.require('electron').webContents.fromId(${this.targetId})
       if (!target || target.isDestroyed()) throw new Error('Simulator target has closed')
       return target.executeJavaScript(${JSON.stringify(wrapped)})
@@ -78,7 +101,12 @@ class MiniProgram {
   }
 
   /** Execute a JSON-serializable function or expression in the actual IDE mini-program worker. */
-  evaluate(fn, ...args) {
+  evaluate<Args extends unknown[], Result>(
+    fn: (...args: Args) => Result,
+    ...args: Args
+  ): Promise<Awaited<Result>>
+  evaluate<Result = unknown>(expression: string, ...args: unknown[]): Promise<Result>
+  evaluate(fn: string | ((...args: any[]) => unknown), ...args: unknown[]): Promise<unknown> {
     if (typeof fn !== 'function' && typeof fn !== 'string')
       throw error('ERR_OPTIONS', 'evaluate expects a function or expression string')
     const expression =
@@ -88,22 +116,22 @@ class MiniProgram {
     )
   }
 
-  async pageStack() {
+  async pageStack(): Promise<Page[]> {
     const pages = await this.evaluate(() =>
       getCurrentPages().map((page) => ({
         path: page.route || page.__route__,
         query: page.options || {},
       })),
     )
-    return pages.map((page) => new Page(this, page.path, page.query))
+    return pages.map((page) => new Page(this, page.path!, page.query))
   }
 
-  async currentPage() {
+  async currentPage(): Promise<Page | null> {
     const pages = await this.pageStack()
     return pages[pages.length - 1] || null
   }
 
-  async _changeRoute(method, url) {
+  private async _changeRoute(method: 'reLaunch' | 'navigateTo', url: string): Promise<Page> {
     if (typeof url !== 'string' || !url)
       throw error('ERR_OPTIONS', 'A mini-program route is required')
     await this.evaluate(
@@ -121,14 +149,14 @@ class MiniProgram {
     }, `Page did not open: ${expected}`)
   }
 
-  reLaunch(url) {
+  reLaunch(url: string): Promise<Page> {
     return this._changeRoute('reLaunch', url)
   }
-  navigateTo(url) {
+  navigateTo(url: string): Promise<Page> {
     return this._changeRoute('navigateTo', url)
   }
 
-  async navigateBack() {
+  async navigateBack(): Promise<Page> {
     const pages = await this.pageStack()
     if (pages.length < 2) throw error('ERR_NAVIGATION', 'There is no previous page')
     const expected = pages[pages.length - 2].path
@@ -142,15 +170,25 @@ class MiniProgram {
     }, `navigateBack did not return to ${expected}`)
   }
 
-  waitFor(check, options = {}, timeout) {
+  waitFor<T>(check: () => T, options?: WaitOptions): Promise<WaitResult<T>>
+  waitFor<T>(check: () => T, message: string, timeout?: number): Promise<WaitResult<T>>
+  waitFor<T>(
+    check: () => T,
+    options: WaitOptions | string = {},
+    timeout?: number,
+  ): Promise<WaitResult<T>> {
     if (typeof options === 'string') options = { message: options, timeout }
     return waitFor(check, { timeout: this.timeout, interval: this.interval, ...options })
   }
 
-  async _query(selector, text, all) {
+  private async _query(
+    selector: string,
+    text: string | undefined,
+    all: boolean,
+  ): Promise<Element[]> {
     if (typeof selector !== 'string' || !selector)
       throw error('ERR_OPTIONS', 'A CSS selector is required')
-    const matches = await this.renderer(`(() => {
+    const matches = await this.renderer<number[]>(`(() => {
       const store = window.__alipayAutomatorElements || (window.__alipayAutomatorElements = { sequence: 0, nodes: new Map(), ids: new WeakMap() })
       for (const [id, node] of store.nodes) {
         if (!node.isConnected || !node.ownerDocument.defaultView) store.nodes.delete(id)
@@ -175,14 +213,14 @@ class MiniProgram {
     return matches.map((id) => new Element(this, id, selector))
   }
 
-  async query(selector, text) {
+  async query(selector: string, text?: string): Promise<Element | null> {
     return (await this._query(selector, text, false))[0] || null
   }
-  queryAll(selector, text) {
+  queryAll(selector: string, text?: string): Promise<Element[]> {
     return this._query(selector, text, true)
   }
 
-  async _inputCommand(method, params) {
+  private async _inputCommand(method: string, params: Record<string, unknown>): Promise<true> {
     return this.inspector.evaluate(`(async () => {
       const target = process.mainModule.require('electron').webContents.fromId(${this.targetId})
       if (!target || target.isDestroyed()) throw new Error('Simulator target has closed')
@@ -192,7 +230,7 @@ class MiniProgram {
     })()`)
   }
 
-  async mouseClick(x, y) {
+  async mouseClick(x: number, y: number): Promise<void> {
     if (![x, y].every(Number.isFinite))
       throw error('ERR_OPTIONS', 'Pointer coordinates must be finite')
     await this._inputCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
@@ -214,19 +252,24 @@ class MiniProgram {
     })
   }
 
-  insertText(text) {
+  insertText(text: string | number): Promise<true> {
     return this._inputCommand('Input.insertText', { text: String(text) })
   }
 
-  async pressKey({ key, code, keyCode, modifiers = 0, commands }) {
-    const params = { key, code, windowsVirtualKeyCode: keyCode, modifiers }
+  async pressKey({ key, code, keyCode, modifiers = 0, commands }: KeyOptions): Promise<void> {
+    const params: Omit<KeyOptions, 'keyCode'> & { windowsVirtualKeyCode: number } = {
+      key,
+      code,
+      windowsVirtualKeyCode: keyCode,
+      modifiers,
+    }
     if (commands) params.commands = commands
     await this._inputCommand('Input.dispatchKeyEvent', { ...params, type: 'rawKeyDown' })
     await this._inputCommand('Input.dispatchKeyEvent', { ...params, type: 'keyUp' })
   }
 
-  async screenshot({ path: destination } = {}) {
-    const data = await this.inspector
+  async screenshot({ path: destination }: ScreenshotOptions = {}): Promise<Buffer> {
+    const data: string = await this.inspector
       .evaluate(`process.mainModule.require('electron').webContents.fromId(${this.targetId})
       .capturePage().then(image => image.toPNG().toString('base64'))`)
     const buffer = Buffer.from(data, 'base64')
@@ -237,11 +280,11 @@ class MiniProgram {
     return buffer
   }
 
-  disconnect() {
+  disconnect(): void {
     this.inspector.close()
   }
 
-  async close() {
+  async close(): Promise<void> {
     if (!this._owned) {
       this.disconnect()
       return
@@ -268,5 +311,3 @@ class MiniProgram {
     }
   }
 }
-
-module.exports = { MiniProgram }

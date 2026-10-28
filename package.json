@@ -1,6 +1,6 @@
 {
   "name": "alipay-miniprogram-automator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Unofficial automation SDK for the simulator in Alipay Mini Program Studio",
   "type": "commonjs",
   "main": "./out/index.js",

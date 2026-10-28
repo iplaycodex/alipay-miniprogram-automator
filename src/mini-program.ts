@@ -164,12 +164,31 @@ export class MiniProgram {
   }
 
   /** @internal Wait for matching worker/render documents and the IDE startup phase to settle. */
-  async _waitForReady(timeout = this.timeout): Promise<Page[]> {
+  async _waitForReady(
+    timeout = this.timeout,
+    options: { retryTimeouts?: boolean; checkProcess?: () => void } = {},
+  ): Promise<Page[]> {
     let previous = '',
       stable = 0
     return this.waitFor(
       async () => {
-        const pages = await this._readyPages()
+        options.checkProcess?.()
+        let pages: Page[] | null
+        try {
+          pages = await this._readyPages()
+        } catch (cause) {
+          // During compilation the worker bridge can exist before it can answer probes.
+          // Retry only read-only startup probes, never navigation or user actions.
+          if (
+            !options.retryTimeouts ||
+            !(cause instanceof Error) ||
+            !('code' in cause) ||
+            cause.code !== 'ERR_TIMEOUT'
+          )
+            throw cause
+          options.checkProcess?.()
+          pages = null
+        }
         const signature = pages && JSON.stringify(pages.map((page) => page.identity))
         stable = signature && signature === previous ? stable + 1 : 0
         previous = signature || ''

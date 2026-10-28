@@ -29,6 +29,7 @@ function availablePort(port = 0): Promise<number> {
 export function launch(options: LaunchOptions): Promise<MiniProgram>
 export async function launch(options: Partial<LaunchOptions> = {}): Promise<MiniProgram> {
   const timeout = options.timeout || 90000
+  const deadline = Date.now() + timeout
   if (!options.projectPath)
     throw error('ERR_OPTIONS', 'launch requires projectPath containing the Alipay build output')
   let projectPath = path.resolve(options.projectPath)
@@ -79,17 +80,23 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
     if (child.exitCode !== null || child.signalCode !== null)
       throw error('ERR_IDE_EXIT', `IDE exited before startup; see ${logPath}`)
   }
+  const remaining = () => {
+    checkProcess()
+    const budget = deadline - Date.now()
+    if (budget <= 0) throw error('ERR_TIMEOUT', `IDE startup timed out; see ${logPath}`)
+    return budget
+  }
   try {
     inspector = await waitFor(
       async () => {
         checkProcess()
         try {
-          return await Inspector.connect({ port, timeout: 1000 })
+          return await Inspector.connect({ port, timeout: Math.min(remaining(), 15000) })
         } catch (_) {
           return null
         }
       },
-      { timeout, message: `IDE inspector did not start; see ${logPath}` },
+      { timeout: remaining(), message: `IDE inspector did not start; see ${logPath}` },
     )
     const actual = await waitFor(
       async () => {
@@ -108,12 +115,21 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
           return null
         }
       },
-      { timeout, message: `IDE main process did not initialize; see ${logPath}` },
+      { timeout: remaining(), message: `IDE main process did not initialize; see ${logPath}` },
     )
     if (actual.pid !== child.pid || path.resolve(actual.profilePath) !== profilePath)
       throw error('ERR_IDE_PROCESS', 'Launched IDE identity did not match the isolated process')
     assertSupportedVersion(actual.ideVersion, options.allowUnverifiedVersion)
-    await openProject(inspector, projectPath, timeout)
+    const importInspector = inspector
+    await openProject(
+      {
+        evaluate: async (expression) =>
+          importInspector.evaluate(expression, Math.min(remaining(), 15000)),
+        close: () => importInspector.close(),
+      },
+      projectPath,
+      remaining,
+    )
     inspector.close()
     inspector = null
     const miniProgram = await waitFor(
@@ -125,7 +141,7 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
             port,
             profilePath,
             idePid: child.pid,
-            timeout: Math.min(timeout, 15000),
+            timeout: Math.min(remaining(), 15000),
           })
         } catch (cause) {
           if (
@@ -138,14 +154,14 @@ export async function launch(options: Partial<LaunchOptions> = {}): Promise<Mini
           return null
         }
       },
-      { timeout, message: `IDE simulator did not start; see ${logPath}` },
+      { timeout: remaining(), message: `IDE simulator did not start; see ${logPath}` },
     )
     miniProgram._owned = { child, profilePath, port, logPath }
     miniProgram.info.inspectorPort = port
     miniProgram.info.projectPath = projectPath
     miniProgram.info.logPath = logPath
     try {
-      await miniProgram._waitForReady(timeout)
+      await miniProgram._waitForReady(remaining(), { retryTimeouts: true, checkProcess })
     } catch (cause) {
       await miniProgram.close()
       throw cause

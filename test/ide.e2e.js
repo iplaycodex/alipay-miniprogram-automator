@@ -267,3 +267,45 @@ test(
     }
   },
 )
+
+test(
+  'cold launch tolerates worker initialization beyond the 15-second command timeout',
+  { timeout: 150000 },
+  async () => {
+    const output = path.resolve('.artifacts')
+    fs.mkdirSync(output, { recursive: true })
+    const directory = fs.mkdtempSync(path.join(output, 'slow-start-'))
+    const projectPath = path.join(directory, 'project')
+    fs.cpSync(path.resolve('examples/native-miniapp'), projectPath, { recursive: true })
+    // A deliberately slow fixture reproduces the worker being unable to answer startup probes.
+    fs.writeFileSync(
+      path.join(projectPath, 'app.js'),
+      'App({ onLaunch() { const end = Date.now() + 18000; while (Date.now() < end) {} } })\n',
+    )
+    let app
+    const started = Date.now()
+    const report = { status: 'failed', simulatedWorkerStartupMs: 18000 }
+    try {
+      app = await automator.launch({
+        projectPath,
+        profilePath: path.join(directory, 'profile'),
+        logPath: path.join(directory, 'ide.log'),
+        timeout: 120000,
+      })
+      report.launchDurationMs = Date.now() - started
+      assert(report.launchDurationMs >= 18000)
+      assert(report.launchDurationMs < 120000)
+      const page = await app.navigateTo('/pages/detail/index?count=slow-start')
+      assert.equal(page.query.count, 'slow-start')
+      assert.match(await (await page.waitFor('.detail-count')).text(), /slow-start/)
+      assert.equal(await app.evaluate(() => my.SDKVersion), '2.10.15')
+      report.status = 'passed'
+    } catch (cause) {
+      report.error = cause.message
+      throw cause
+    } finally {
+      if (app) await app.close()
+      fs.writeFileSync(path.join(output, 'slow-start-report.json'), JSON.stringify(report, null, 2))
+    }
+  },
+)

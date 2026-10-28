@@ -62,7 +62,7 @@ npm run check:package
 
 原生 E2E 会自行启动已安装 IDE，输出 `.artifacts/e2e-report.json` 和 `.artifacts/native-main.png`，随后关闭自己创建的 IDE。启动日志输出到 `.artifacts/ide.log`。这些产物已被 Git 忽略，不应公开包含登录态或访问凭证的日志、用户目录。
 
-在独立消费目录中安装 `npm pack` 产物也经过验证；npm 包只携带 SDK、文档及许可证。克隆仓库可获得可执行示例和测试。本项目尚未发布到 npm registry。
+在独立消费目录中安装 `npm pack` 产物也经过验证；npm 包只携带 SDK、文档及许可证。克隆仓库可获得可执行示例和测试。安装方式与使用要求见 README。
 
 ## 运行边界与已知限制
 

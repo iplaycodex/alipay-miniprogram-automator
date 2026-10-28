@@ -14,9 +14,17 @@
 - 原生支付宝项目可以直接加载。Taro 等框架项目应先生成 `alipay` 目标产物，将含 `app.json` 和 `app.js` 的目录作为 `projectPath`。
 - 官方模拟器不支持的 API，本库不会补齐；真机一致性、授权登录、支付和硬件能力不在当前验证承诺内。
 
-## 获取代码
+## 安装
 
-当前尚未发布到 npm。可以克隆本仓库安装依赖：
+在测试工程中安装：
+
+```bash
+npm install --save-dev alipay-miniprogram-automator
+```
+
+npm 包包含编译好的 JavaScript 和类型声明，无需在消费工程中编译 SDK。运行前需自行安装上文所列的支付宝官方 IDE。
+
+需要开发源码或运行仓库示例时，可以克隆本仓库：
 
 ```bash
 git clone https://github.com/iplaycodex/alipay-miniprogram-automator.git

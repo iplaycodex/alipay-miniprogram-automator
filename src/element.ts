@@ -68,6 +68,11 @@ export class Element {
     )
   }
   async tap(options: WaitOptions = {}): Promise<void> {
+    await this.inspect((node: HTMLElement) => {
+      if (node.matches(':disabled') || node.getAttribute('aria-disabled') === 'true')
+        throw Object.assign(new Error('Element is disabled'), { code: 'ERR_ELEMENT_DISABLED' })
+      node.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' })
+    })
     await this.waitForStable(options)
     const point = await this.miniProgram.waitFor(
       () =>

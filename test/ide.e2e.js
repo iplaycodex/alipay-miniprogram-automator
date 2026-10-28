@@ -168,6 +168,102 @@ test(
         assert.match(await (await fresh.waitFor('.detail-count')).text(), /计数：44/)
         await assert.rejects(nextDetail.$('.detail-count'), { code: 'ERR_INACTIVE_PAGE' })
       })
+      let scrollTarget
+      await step('tap scrolls both axes through nested clipped containers', async () => {
+        const page = await miniProgram.currentPage()
+        const anchor = await page.waitFor('.detail-count')
+        await anchor.inspect((node) => {
+          const doc = node.ownerDocument
+          const outer = doc.createElement('div')
+          outer.id = 'tap-scroll-fixture'
+          outer.style.cssText =
+            'position:fixed;top:20px;left:20px;width:220px;height:220px;overflow:auto;z-index:9999;background:white;scroll-behavior:smooth'
+          const space = doc.createElement('div')
+          space.style.cssText = 'width:650px;height:650px;padding:160px;box-sizing:border-box'
+          const inner = doc.createElement('div')
+          inner.id = 'tap-scroll-inner'
+          inner.style.cssText = 'width:160px;height:160px;overflow:auto;scroll-behavior:smooth'
+          const content = doc.createElement('div')
+          content.style.cssText =
+            'width:500px;height:500px;padding:250px 0 0 250px;box-sizing:border-box'
+          const button = doc.createElement('button')
+          button.id = 'tap-scroll-target'
+          button.textContent = 'Scroll target'
+          button.style.cssText = 'width:100px;height:40px'
+          button.dataset.clicks = '0'
+          button.addEventListener('click', () => {
+            button.dataset.clicks = String(Number(button.dataset.clicks) + 1)
+          })
+          content.appendChild(button)
+          inner.appendChild(content)
+          space.appendChild(inner)
+          outer.appendChild(space)
+          doc.body.appendChild(outer)
+        })
+        scrollTarget = await page.waitFor('#tap-scroll-target')
+        assert.equal(
+          await scrollTarget.inspect((node) => {
+            const r = node.getBoundingClientRect()
+            return (
+              node.ownerDocument.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === node
+            )
+          }),
+          false,
+        )
+        await scrollTarget.tap({ timeout: 3000 })
+        assert.equal(await scrollTarget.attribute('data-clicks'), '1')
+        assert.equal(
+          await scrollTarget.inspect((node) =>
+            ['tap-scroll-fixture', 'tap-scroll-inner'].every((id) => {
+              const container = node.ownerDocument.getElementById(id)
+              return container.scrollTop > 0 && container.scrollLeft > 0
+            }),
+          ),
+          true,
+        )
+      })
+      await step('tap keeps an already visible target in place', async () => {
+        const positions = () =>
+          scrollTarget.inspect((node) =>
+            ['tap-scroll-fixture', 'tap-scroll-inner'].map((id) => {
+              const container = node.ownerDocument.getElementById(id)
+              return [container.scrollTop, container.scrollLeft]
+            }),
+          )
+        const before = await positions()
+        await scrollTarget.tap()
+        assert.deepEqual(await positions(), before)
+        assert.equal(await scrollTarget.attribute('data-clicks'), '2')
+      })
+      await step(
+        'automatic scrolling preserves disabled, overlay and stale-element guards',
+        async () => {
+          try {
+            await scrollTarget.inspect((node) => {
+              node.disabled = true
+            })
+            await assert.rejects(scrollTarget.tap({ timeout: 1000 }), {
+              code: 'ERR_ELEMENT_DISABLED',
+            })
+            await scrollTarget.inspect((node) => {
+              node.disabled = false
+              const overlay = node.ownerDocument.createElement('div')
+              overlay.id = 'tap-scroll-overlay'
+              overlay.style.cssText =
+                'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.1)'
+              node.ownerDocument.body.appendChild(overlay)
+            })
+            await assert.rejects(scrollTarget.tap({ timeout: 1000 }), { code: 'ERR_TIMEOUT' })
+            assert.equal(await scrollTarget.attribute('data-clicks'), '2')
+          } finally {
+            await scrollTarget.inspect((node) => {
+              node.ownerDocument.getElementById('tap-scroll-overlay')?.remove()
+              node.ownerDocument.getElementById('tap-scroll-fixture')?.remove()
+            })
+          }
+          await assert.rejects(scrollTarget.tap(), { code: 'ERR_STALE_ELEMENT' })
+        },
+      )
       await step('native navigation failure rejects instead of returning an old page', async () => {
         await assert.rejects(miniProgram.navigateTo('/pages/missing/index'), {
           code: 'ERR_NAVIGATION',
@@ -191,11 +287,11 @@ test(
             status:
               outerError ||
               results.some((item) => item.status === 'failed') ||
-              results.length !== 15
+              results.length !== 18
                 ? 'failed'
                 : 'passed',
             startupError: outerError,
-            required: 15,
+            required: 18,
             executed: results.length,
             ideVersion: info?.ideVersion,
             passed: results.filter((item) => item.status === 'passed').length,
